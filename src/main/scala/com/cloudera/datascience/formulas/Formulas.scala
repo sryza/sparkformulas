@@ -28,7 +28,7 @@ class BaseVariable(val cols: List[Symbol]) {
     }
   }
 
-  def name: String = cols.map(_.name).mkString(":")
+  override def toString = cols.map(_.name).mkString(":")
 }
 
 object Formulas {
@@ -49,12 +49,13 @@ object Formulas {
   def createFrame(source: DataFrame, expr: Expression): DataFrame = {
     val df = source.select()
     val bases = expand(expr)
-    bases.foldLeft(df)((df, base) => df.addColumn(base.name, base.column(source)))
+    bases.foldLeft(df)((df, base) => df.addColumn(base.toString, base.column(source)))
   }
 
   def expand(expr: Expression): List[BaseVariable] = {
     expr match {
       case e: ColumnExpression => List(new BaseVariable(e.col))
+      case e: CompositeExpression => expand(e.left) ++ expand(e.right)
       case e: InteractionExpression => (interaction(expand(e.left), expand(e.right)))
       case e: InteractionAndUnderlyingExpression => {
         val left = expand(e.left)
@@ -66,6 +67,6 @@ object Formulas {
 
   private def interaction(left: List[BaseVariable], right: List[BaseVariable])
     : List[BaseVariable] = {
-    left.flatMap(l => right.map(r => new BaseVariable(r.cols ++ l.cols)))
+    left.flatMap(l => right.map(r => new BaseVariable(l.cols ++ r.cols)))
   }
 }

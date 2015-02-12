@@ -15,10 +15,10 @@
 
 package com.cloudera.datascience.formulas
 
+import com.cloudera.datascience.formulas.Expression._
+
 import org.scalatest.FunSuite
 import org.scalatest.Matchers._
-
-import com.cloudera.datascience.formulas.Expression._
 
 class ExpressionSuite extends FunSuite {
   test("expression with only addition") {
