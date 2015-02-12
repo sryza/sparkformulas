@@ -15,12 +15,23 @@
 
 package com.cloudera.datascience.formulas
 
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.{Column, DataFrame, Row}
+
+class BaseVariable(val cols: List[Symbol]) {
+  def this(col: Symbol) = this(List(col))
+
+  def column(source: DataFrame): Column = {
+    if (cols.size == 1) {
+      source.col(cols.head.name)
+    } else {
+      throw new UnsupportedOperationException
+    }
+  }
+
+  def name: String = cols.map(_.name).mkString(":")
+}
 
 object Formulas {
-  implicit def symbolToFormulaExpr(s: Symbol): SingleColumnExpression =
-    new SingleColumnExpression(null, s)
-
   def frameToMatrix(df: DataFrame): DataFrame = {
     val mat = df.map { row =>
       val arr = new Array[Double](row.length - 1)
@@ -37,31 +48,24 @@ object Formulas {
 
   def createFrame(source: DataFrame, expr: Expression): DataFrame = {
     val df = source.select()
-    enrichFrame(df, source, expr).addColumn(expr.depCol.name, source.col(expr.depCol.name))
+    val bases = expand(expr)
+    bases.foldLeft(df)((df, base) => df.addColumn(base.name, base.column(source)))
   }
 
-  private def enrichFrame(df: DataFrame, source: DataFrame, expr: Expression): DataFrame = {
+  def expand(expr: Expression): List[BaseVariable] = {
     expr match {
-      case e: SingleColumnExpression => df.addColumn(e.col.name, source.col(e.col.name))
-      case e: InteractionAndUnderlyingExpression => interactionAndUnderlying(e.cols, df, source)
-      case e: InteractionExpression => interaction(e.cols, df, source)
+      case e: ColumnExpression => List(new BaseVariable(e.col))
+      case e: InteractionExpression => (interaction(expand(e.left), expand(e.right)))
+      case e: InteractionAndUnderlyingExpression => {
+        val left = expand(e.left)
+        val right = expand(e.right)
+        left ++ right ++ interaction(left, right)
+      }
     }
   }
 
-  private def interaction(cols: List[Symbol], df: DataFrame, source: DataFrame): DataFrame = {
-    if (cols.size == 1) {
-      val colName = cols.head.name
-      df.addColumn(colName, source.col(colName))
-    } else {
-      val colName = cols.map(_.name).mkString(":")
-      null
-    }
-  }
-
-  private def interactionAndUnderlying(cols: List[Symbol], df: DataFrame, source: DataFrame)
-    : DataFrame = {
-    (1 until cols.size + 1).foldLeft(df) { (df, n) =>
-      cols.combinations(n).foldLeft(df)((df, comb) => interaction(comb, df, source))
-    }
+  private def interaction(left: List[BaseVariable], right: List[BaseVariable])
+    : List[BaseVariable] = {
+    left.flatMap(l => right.map(r => new BaseVariable(r.cols ++ l.cols)))
   }
 }

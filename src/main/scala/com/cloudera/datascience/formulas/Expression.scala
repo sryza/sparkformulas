@@ -20,97 +20,67 @@ object Expression {
     formulaExpr
   }
 
-  implicit def symbolToFormulaExpr(s: Symbol): SingleColumnExpression =
-    new SingleColumnExpression(null, s)
+  implicit def symbolToFormulaExpr(s: Symbol): ColumnExpression =
+    new ColumnExpression(s)
 }
 
-class Expression(val depCol: Symbol)
-
-private[formulas]
-class CompositeExpression(depCol: Symbol, val subExprs: List[ColumnExpression])
-  extends Expression(depCol) {
-
-  def +(expr: CompositeExpression): CompositeExpression = {
-    new CompositeExpression(depCol, subExprs ++ expr.subExprs)
-  }
-
-  def +(expr: ColumnExpression): CompositeExpression = {
-    new CompositeExpression(depCol, subExprs :+ expr)
-  }
-
-  override def toString(): String = "(" + subExprs.mkString(" + ") + ")"
+trait HasDependentColumn {
+  def getDependentVariable(): Symbol
 }
 
-private[formulas]
-class ColumnExpression(depCol: Symbol) extends Expression(depCol) {
-  def +(expr: CompositeExpression): CompositeExpression = {
-    new CompositeExpression(depCol, this +: expr.subExprs)
+class Expression {
+  def +(expr: Expression): Expression = {
+    new CompositeExpression(this, expr)
   }
 
-  def +(expr: ColumnExpression): CompositeExpression = {
-    new CompositeExpression(depCol, List(this, expr))
+  def /(expr: Expression): Expression = {
+    new InteractionExpression(this, expr)
+  }
+
+  def *(expr: Expression): Expression = {
+    new InteractionAndUnderlyingExpression(this, expr)
   }
 }
 
 private[formulas]
-class InteractionExpression(depCol: Symbol, val cols: List[Symbol])
-  extends ColumnExpression(depCol) {
-
-  def /(expr: SingleColumnExpression): InteractionExpression = {
-    new InteractionExpression(depCol, cols :+ expr.col)
+class DependentColumnExpression(val depCol: Symbol, val right: Expression) extends Expression {
+  override def +(expr: Expression): Expression = {
+    new DependentColumnExpression(depCol, right + expr)
   }
 
-  override def toString(): String = "(" + cols.mkString(" / ") + ")"
+  override def /(expr: Expression): Expression = {
+    new DependentColumnExpression(depCol, right / expr)
+  }
+
+  override def *(expr: Expression): Expression = {
+    new DependentColumnExpression(depCol, right * expr)
+  }
+
+  override def toString(): String = s"${depCol.name} ~ $right"
 }
 
 private[formulas]
-class InteractionAndUnderlyingExpression(depCol: Symbol, val cols: List[Symbol])
-  extends ColumnExpression(depCol) {
-
-  def *(expr: SingleColumnExpression): InteractionAndUnderlyingExpression = {
-    new InteractionAndUnderlyingExpression(depCol, cols :+ expr.col)
-  }
-
-  override def toString(): String = "(" + cols.mkString(" * ") + ")"
+class CompositeExpression(val left: Expression, val right: Expression) extends Expression {
+  override def toString(): String = s"($left + $right)"
 }
 
 private[formulas]
-class SingleColumnExpression(depCol: Symbol, val col: Symbol) extends ColumnExpression(depCol) {
-  def /(expr: SingleColumnExpression): InteractionExpression = {
-    new InteractionExpression(depCol, List(col, expr.col))
-  }
+class InteractionExpression(val left: Expression, val right: Expression) extends Expression {
+  override def toString(): String = s"($left / $right)"
+}
 
-  def *(expr: SingleColumnExpression): InteractionAndUnderlyingExpression = {
-    new InteractionAndUnderlyingExpression(depCol, List(col, expr.col))
-  }
+private[formulas]
+class InteractionAndUnderlyingExpression(val left: Expression, val right: Expression)
+  extends Expression {
 
-  def ~(expr: CompositeExpression): CompositeExpression = {
-    if (expr.depCol != null) {
-      throw new Exception(s"Expression already has dependent column ${expr.depCol}")
-    }
-    new CompositeExpression(col, expr.subExprs)
-  }
+  override def toString(): String = s"($left * $right)"
+}
 
-  def ~(expr: SingleColumnExpression): SingleColumnExpression = {
-    if (expr.depCol != null) {
-      throw new Exception(s"Expression already has dependent column ${expr.depCol}")
-    }
-    new SingleColumnExpression(col, expr.col)
-  }
-
-  def ~(expr: InteractionExpression): InteractionExpression = {
-    if (expr.depCol != null) {
-      throw new Exception(s"Expression already has dependent column ${expr.depCol}")
-    }
-    new InteractionExpression(col, expr.cols)
-  }
-
-  def ~(expr: InteractionAndUnderlyingExpression): InteractionAndUnderlyingExpression = {
-    if (expr.depCol != null) {
-      throw new Exception(s"Expression already has dependent column ${expr.depCol}")
-    }
-    new InteractionAndUnderlyingExpression(col, expr.cols)
-  }
-
+private[formulas]
+class ColumnExpression(val col: Symbol) extends Expression {
   override def toString(): String = col.name
+
+  def ~(expr: Expression): DependentColumnExpression = {
+    new DependentColumnExpression(col, expr)
+  }
 }

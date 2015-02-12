@@ -23,6 +23,14 @@ import com.cloudera.datascience.formulas.Expression._
 class ExpressionSuite extends FunSuite {
   test("expression with only addition") {
     expr('a + 'b).toString should be ("(a + b)")
-    expr('a + 'b + 'c).toString should be ("(a + b + c)")
+    expr('a + 'b + 'c).toString should be ("((a + b) + c)")
+  }
+
+  test("expression with interaction") {
+    expr('a + 'b * 'c).toString should be ("(a + (b * c))")
+  }
+
+  test("dependent variable") {
+    expr('y ~ 'a + 'b + 'c).toString should be ("y ~ ((a + b) + c)")
   }
 }
