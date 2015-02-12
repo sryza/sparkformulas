@@ -38,7 +38,7 @@ class CompositeExpression(depCol: Symbol, val subExprs: List[ColumnExpression])
     new CompositeExpression(depCol, subExprs :+ expr)
   }
 
-  def toString()
+  override def toString(): String = "(" + subExprs.mkString(" + ") + ")"
 }
 
 private[formulas]
@@ -59,6 +59,8 @@ class InteractionExpression(depCol: Symbol, val cols: List[Symbol])
   def /(expr: SingleColumnExpression): InteractionExpression = {
     new InteractionExpression(depCol, cols :+ expr.col)
   }
+
+  override def toString(): String = "(" + cols.mkString(" / ") + ")"
 }
 
 private[formulas]
@@ -68,6 +70,8 @@ class InteractionAndUnderlyingExpression(depCol: Symbol, val cols: List[Symbol])
   def *(expr: SingleColumnExpression): InteractionAndUnderlyingExpression = {
     new InteractionAndUnderlyingExpression(depCol, cols :+ expr.col)
   }
+
+  override def toString(): String = "(" + cols.mkString(" * ") + ")"
 }
 
 private[formulas]
@@ -107,4 +111,6 @@ class SingleColumnExpression(depCol: Symbol, val col: Symbol) extends ColumnExpr
     }
     new InteractionAndUnderlyingExpression(col, expr.cols)
   }
+
+  override def toString(): String = col.name
 }
