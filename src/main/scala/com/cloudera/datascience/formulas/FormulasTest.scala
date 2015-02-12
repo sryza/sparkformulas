@@ -1,9 +1,9 @@
 package org.apache.spark.ml.formula
 
-import org.apache.spark.ml.formula.Formulas._
+import com.cloudera.datascience.formulas.Expression._
 
 object FormulasTest {
   def main(args: Array[String]) {
-    val x = formula('col1 ~ 'col2 + 'col3)// * 'col4 * 'col5)
+    val x = expr('col1 ~ 'col2 + 'col3 * 'col4 * 'col5)
   }
 }
