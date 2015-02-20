@@ -17,7 +17,7 @@ package com.cloudera.datascience.formulas
 
 import org.apache.spark.sql.{Column, DataFrame, Row}
 
-class BaseVariable(val cols: List[Symbol]) {
+class BaseInteraction(val cols: List[Symbol]) extends Serializable {
   def this(col: Symbol) = this(List(col))
 
   def column(source: DataFrame): Column = {
@@ -31,16 +31,66 @@ class BaseVariable(val cols: List[Symbol]) {
   override def toString = cols.map(_.name).mkString(":")
 }
 
+trait CategoricalStrategy extends Serializable {
+  /**
+   * Space required in the vector for a categorical variable with the given number of levels.
+   */
+  def spaceRequiredInVector(numLevels: Int): Int
+
+  def fillInDense(level: Int, vec: Array[Double], offsInVec: Int): Unit
+}
+
+case class OneHotCategoricalStrategy() extends CategoricalStrategy {
+  def spaceRequiredInVector(numLevels: Int): Int = numLevels
+
+  def fillInDense(level: Int, vec: Array[Double], offsInVec: Int): Unit = {
+    vec(offsInVec + level) = 1
+  }
+}
+
+case class IndexCategoricalStrategy() extends CategoricalStrategy {
+  def spaceRequiredInVector(numLevels: Int): Int = 1
+
+  def fillInDense(level: Int, vec: Array[Double], offsInVec: Int)
+    : Unit = {
+    vec(offsInVec) = level
+  }
+}
+
 object Formulas {
-  def frameToMatrix(df: DataFrame): DataFrame = {
-    val mat = df.map { row =>
-      val arr = new Array[Double](row.length - 1)
-      var i = 0
-      while (i < row.length - 1) {
-        arr(i) = row.getDouble(i)
-        i += 1
+  def frameToMatrix(
+      df: DataFrame,
+      catMap: Map[String, Map[Any, Int]],
+      catStrat: CategoricalStrategy,
+      interactions: List[BaseInteraction]): DataFrame = {
+    // Tuples of (interaction, continuous?, space required)
+    val interactionStats = interactions.map { interaction =>
+      if (interaction.cols.size == 1 && !catMap.contains(interaction.cols(0).name)) {
+        // continuous
+        (interaction, true, 1)
+      } else {
+        // categorical
+        val numLevels = interaction.cols.foldLeft(1)((prod, col) => prod * catMap(col.name).size)
+        (interaction, false, catStrat.spaceRequiredInVector(numLevels))
       }
-      Row.apply(arr, row(i))
+    }
+
+    val vecLength = interactionStats.foldLeft(0)((sum, is) => sum + is._3)
+
+    val mat = df.map { row =>
+      val arr = new Array[Double](vecLength)
+      var offsInVec = 0
+      // TODO: make this faster
+      interactionStats.foreach { case (interaction, cont, space) =>
+        if (cont) {
+          val value = 0 // TODO
+          arr(offsInVec) = value
+        } else {
+          val level = 0 // TODO
+          catStrat.fillInDense(level, arr, offsInVec)
+        }
+        offsInVec += space
+      }
     }
 //    df.sqlContext.applySchema()
     null
@@ -52,9 +102,9 @@ object Formulas {
     bases.foldLeft(df)((df, base) => df.addColumn(base.toString, base.column(source)))
   }
 
-  def expand(expr: Expression): List[BaseVariable] = {
+  def expand(expr: Expression): List[BaseInteraction] = {
     expr match {
-      case e: ColumnExpression => List(new BaseVariable(e.col))
+      case e: ColumnExpression => List(new BaseInteraction(e.col))
       case e: CompositeExpression => expand(e.left) ++ expand(e.right)
       case e: InteractionExpression => (interaction(expand(e.left), expand(e.right)))
       case e: InteractionAndUnderlyingExpression => {
@@ -65,8 +115,8 @@ object Formulas {
     }
   }
 
-  private def interaction(left: List[BaseVariable], right: List[BaseVariable])
-    : List[BaseVariable] = {
-    left.flatMap(l => right.map(r => new BaseVariable(l.cols ++ r.cols)))
+  private def interaction(left: List[BaseInteraction], right: List[BaseInteraction])
+    : List[BaseInteraction] = {
+    left.flatMap(l => right.map(r => new BaseInteraction(l.cols ++ r.cols)))
   }
 }
